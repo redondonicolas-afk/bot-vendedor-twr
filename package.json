@@ -1,0 +1,18 @@
+{
+  "name": "bot-vendedor",
+  "version": "1.0.0",
+  "description": "Bot vendedor de WhatsApp (QR de la pared) con Claude AI - Tu WhatsApp Resuelto",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": ["whatsapp", "bot", "claude", "ai", "ventas", "leads"],
+  "author": "Nico",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  }
+}
