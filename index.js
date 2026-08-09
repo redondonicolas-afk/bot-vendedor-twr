@@ -93,7 +93,7 @@ async function consultarClaude(telefono, mensaje) {
             system: SYSTEM_PROMPT,
             messages: mensajes
         });
-        const respuesta = response.content[0].text;
+        const respuesta = (response.content.find(b => b.type === 'text')?.text) || CONFIG.mensajeError;
         conversaciones[telefono].push({ role: 'user', content: mensaje });
         conversaciones[telefono].push({ role: 'assistant', content: respuesta });
         if (conversaciones[telefono].length > 100) {
