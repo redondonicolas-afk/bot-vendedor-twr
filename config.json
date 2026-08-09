@@ -28,7 +28,7 @@
 
     "mensajeError": "Uy, se me trabó algo 😅 En un ratito te responde Nico por acá. ¡Gracias por la paciencia!",
 
-    "modeloClaude": "claude-sonnet-4-20250514",
+   "modeloClaude": "claude-sonnet-5",
     "maxTokens": 1024,
     "historialMensajes": 12
 }
