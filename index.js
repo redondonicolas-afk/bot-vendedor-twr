@@ -57,7 +57,11 @@ ${cincoPreguntas}
 2) Cuando diga su rubro: devolvé 3-4 ideas CONCRETAS de ese rubro y preguntá si le sirve.
 3) Si muestra interés: ofrecé armarle un mini-demo con "5 preguntas rápidas".
 4) Si acepta: hacé las 5 preguntas UNA POR UNA, esperando respuesta entre cada una.
-5) Cuando tengas las 5 respuestas: agradecé y decí que le mandás algo en 24-48hs.
+5) Cuando tengas las 5 respuestas: agradecé y CERRÁ COORDINANDO. Decile que Nico le escribe
+   personalmente en menos de 24 horas para coordinar una charla de 30 minutos donde arman el
+   asistente juntos con los datos de su negocio. Preguntale qué día y en qué franja horaria
+   le queda cómodo. NUNCA prometas que le vas a mandar un demo por mail ni pongas plazos de
+   entrega de material: lo único que prometemos es que Nico lo contacta.
 
 ═══════════════ RESTRICCIONES ═══════════════
 ${CONFIG.restricciones}
@@ -133,26 +137,60 @@ function extraerLead(textoClaude, telefono) {
     return { textoLimpio, lead };
 }
 
+// Manda cada intercambio al Apps Script para que quede registrado.
+// Fire-and-forget a propósito: si falla, el bot igual contesta.
+function registrarConversacion(telefono, entrante, saliente) {
+    if (!process.env.LEAD_WEBHOOK_URL) return;
+    const fila = {
+        tipo: 'mensaje',
+        fecha: new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }),
+        telefono,
+        entrante,
+        saliente
+    };
+    fetch(process.env.LEAD_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fila)
+    }).then(res => {
+        if (!res.ok) console.error(`\u26a0\ufe0f El Sheet rechazó el registro de conversación: ${res.status}`);
+    }).catch(e => console.error('\u26a0\ufe0f No pude registrar la conversación:', e.message));
+}
+
+// fetch NO tira excepción cuando el servidor responde 400 o 404: solo si no hay red.
+// Sin este chequeo, un error del otro lado se loguea como éxito. Ya nos pasó.
+async function postearJson(url, cuerpo, etiqueta) {
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cuerpo)
+        });
+        if (!res.ok) {
+            const detalle = await res.text().catch(() => '');
+            console.error(`❌ ${etiqueta} respondió ${res.status}: ${detalle.slice(0, 300)}`);
+            return false;
+        }
+        console.log(`✅ ${etiqueta} OK`);
+        return true;
+    } catch (e) {
+        console.error(`❌ ${etiqueta} falló: ${e.message}`);
+        return false;
+    }
+}
+
 async function guardarLead(lead) {
     if (!lead) return;
     console.log('📥 LEAD nuevo:', JSON.stringify(lead));
 
-    // 1) Google Sheet (via Apps Script webhook)
-    if (process.env.LEAD_WEBHOOK_URL) {
-        try {
-            await fetch(process.env.LEAD_WEBHOOK_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(lead)
-            });
-            console.log('✅ Lead guardado en Google Sheet');
-        } catch (e) {
-            console.error('❌ Error guardando en Sheet:', e.message);
-        }
-    }
+    // 1) Telegram PRIMERO: es el aviso que Nico necesita al instante.
+    //    Guardar en el Sheet puede tardar decenas de segundos y no puede demorar esto.
+    //    .trim() a propósito: un espacio pegado de más en la variable de entorno rompía
+    //    el envío en silencio.
+    const tgToken = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+    const tgChat = (process.env.TELEGRAM_CHAT_ID || '').trim();
 
-    // 2) Aviso por Telegram (opcional)
-    if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+    if (tgToken && tgChat) {
         const msg =
             `🎯 *Nuevo lead del QR*\n\n` +
             `🏪 ${lead.negocio || '-'} (${lead.rubro || '-'})\n` +
@@ -161,16 +199,29 @@ async function guardarLead(lead) {
             `❓ Preguntan: ${lead.que_preguntan || '-'}\n` +
             `🎁 Quiere: ${lead.que_resuelva || '-'}\n` +
             `📌 Etapa: ${lead.etapa || '-'}`;
-        try {
-            await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: process.env.TELEGRAM_CHAT_ID, text: msg, parse_mode: 'Markdown' })
-            });
-            console.log('✅ Aviso enviado por Telegram');
-        } catch (e) {
-            console.error('❌ Error Telegram:', e.message);
+
+        const ok = await postearJson(
+            `https://api.telegram.org/bot${tgToken}/sendMessage`,
+            { chat_id: tgChat, text: msg, parse_mode: 'Markdown' },
+            'Aviso por Telegram'
+        );
+
+        // Si Markdown no parsea (un * o un _ suelto en lo que escribió el cliente),
+        // reintentar en texto plano antes que perder el aviso.
+        if (!ok) {
+            await postearJson(
+                `https://api.telegram.org/bot${tgToken}/sendMessage`,
+                { chat_id: tgChat, text: msg.replace(/\*/g, '') },
+                'Aviso por Telegram (texto plano)'
+            );
         }
+    } else {
+        console.warn('⚠️ Telegram sin configurar: no hay TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID');
+    }
+
+    // 2) Google Sheet
+    if (process.env.LEAD_WEBHOOK_URL) {
+        await postearJson(process.env.LEAD_WEBHOOK_URL, { tipo: 'lead', ...lead }, 'Lead al Google Sheet');
     }
 }
 
@@ -207,7 +258,9 @@ app.post('/webhook', async (req, res) => {
                                 const respuestaCruda = await consultarClaude(from, texto);
                                 const { textoLimpio, lead } = extraerLead(respuestaCruda, from);
 
-                                await enviarMensaje(from, textoLimpio || respuestaCruda);
+                                const salida = textoLimpio || respuestaCruda;
+                                await enviarMensaje(from, salida);
+                                registrarConversacion(from, texto, salida);
                                 if (lead) await guardarLead(lead);
                             }
                         }
