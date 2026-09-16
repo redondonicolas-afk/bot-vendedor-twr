@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Probá tu asistente — NR Digital</title>
+<meta name="description" content="Contanos de tu negocio y en dos minutos hablás por WhatsApp con un asistente armado para tu rubro.">
+<meta name="theme-color" content="#0E1214">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  color-scheme:dark;
+  --papel:#0E1214; --papel-2:#161C1F; --tinta:#E8EDE9; --tinta-2:#B4C0BA;
+  --humo:#8A968F; --linea:#252D30; --senal:#4FD09A; --senal-viva:#35C08A;
+  --alerta:#E8A0A0;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif;
+  --texto:"Source Serif 4",Georgia,serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--papel);color:var(--tinta);font-family:var(--texto);
+  font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%}
+.env{width:min(680px,100%);margin-inline:auto;padding:46px 20px 72px}
+h1,h2,h3,.et,label,.btn{font-family:var(--display)}
+h1{font-size:clamp(31px,5.5vw,44px);line-height:1.06;letter-spacing:-.03em;margin:12px 0 16px;text-wrap:balance}
+h1 em{font-style:normal;color:var(--senal)}
+p{margin:0}
+.et{font-family:var(--mono);font-size:11px;letter-spacing:.17em;text-transform:uppercase;color:var(--senal)}
+.bajada{color:var(--tinta-2);font-size:18px;max-width:52ch}
+.marca{display:flex;align-items:center;gap:9px;font-family:var(--display);font-weight:700;
+  font-size:18px;letter-spacing:-.03em;text-decoration:none;color:var(--tinta);margin-bottom:28px}
+.marca .pt{width:8px;height:8px;border-radius:50%;background:var(--senal-viva)}
+
+form{margin-top:34px;display:flex;flex-direction:column;gap:22px}
+.campo{display:flex;flex-direction:column;gap:7px}
+label{font-size:15px;font-weight:500;letter-spacing:-.01em}
+label .req{color:var(--senal)}
+.pista{font-size:14px;color:var(--humo);font-family:var(--texto)}
+.pista b{color:var(--tinta-2);font-family:var(--mono);font-size:13.5px;font-weight:500}
+input,textarea,select{width:100%;min-height:50px;padding:13px 15px;background:var(--papel-2);
+  color:var(--tinta);border:1px solid var(--linea);border-radius:3px;font-family:var(--texto);font-size:16px}
+textarea{min-height:104px;resize:vertical;line-height:1.55}
+textarea::placeholder{color:#5D6A64}
+select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--humo) 50%),linear-gradient(135deg,var(--humo) 50%,transparent 50%);
+  background-position:calc(100% - 20px) calc(50% + 2px),calc(100% - 14px) calc(50% + 2px);
+  background-size:6px 6px,6px 6px;background-repeat:no-repeat;padding-right:44px;cursor:pointer}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--senal);box-shadow:0 0 0 3px rgba(79,208,154,.13)}
+
+/* los campos que aparecen según el rubro */
+#porRubro{display:flex;flex-direction:column;gap:22px}
+#porRubro:empty{display:none}
+.rubro-nota{border-left:2px solid var(--senal);padding:2px 0 2px 14px;color:var(--tinta-2);font-size:15.5px}
+
+.tonos{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media(max-width:520px){.tonos{grid-template-columns:1fr}}
+.tono{position:relative}
+.tono input{position:absolute;opacity:0;width:1px;height:1px}
+.tono span{display:block;border:1px solid var(--linea);background:var(--papel-2);border-radius:3px;
+  padding:14px 15px;cursor:pointer;font-family:var(--display);font-size:15.5px}
+.tono span small{display:block;font-family:var(--texto);font-size:13.5px;color:var(--humo);margin-top:4px;line-height:1.4}
+.tono input:checked + span{border-color:var(--senal);background:rgba(79,208,154,.08)}
+.tono input:focus-visible + span{outline:2px solid var(--senal);outline-offset:2px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:54px;
+  padding:0 26px;border:1px solid var(--senal-viva);background:var(--senal-viva);color:#08120E;
+  font-weight:600;font-size:16.5px;border-radius:3px;cursor:pointer;text-decoration:none}
+.btn:hover{opacity:.92}
+.btn[disabled]{opacity:.55;cursor:default}
+.error{color:var(--alerta);font-size:15px;min-height:22px}
+.legal{margin-top:12px;font-size:14px;color:var(--humo)}
+
+.listo{text-align:center;padding:10px 0 0}
+.listo .tic{font-size:44px;line-height:1}
+.listo h2{font-size:28px;letter-spacing:-.025em;margin:14px 0 12px}
+.listo p{color:var(--tinta-2);max-width:44ch;margin-inline:auto}
+.listo .btn{margin-top:26px}
+.num{font-family:var(--mono);font-size:16px;color:var(--humo);margin-top:18px}
+.tips{text-align:left;margin:30px auto 0;max-width:42ch;display:flex;flex-direction:column;gap:11px}
+.tips div{display:grid;grid-template-columns:18px 1fr;gap:11px;color:var(--tinta-2);font-size:15.5px}
+.tips i{font-style:normal;color:var(--senal)}
+</style>
+</head>
+<body>
+<div class="env">
+  <a class="marca" href="https://nrdigital.com.ar"><span class="pt"></span>NR Digital</a>
+
+  <div id="paso-form">
+    <p class="et">Probalo con tu negocio</p>
+    <h1>Contanos de tu negocio y <em>hablá con tu asistente</em> en dos minutos.</h1>
+    <p class="bajada">Elegí tu rubro y te preguntamos lo que hace falta para ese rubro, no un formulario genérico. Después te abrimos WhatsApp y del otro lado te contesta tu asistente.</p>
+
+    <form id="form" novalidate>
+      <div class="campo">
+        <label for="negocio">¿Cómo se llama tu negocio? <span class="req">*</span></label>
+        <input id="negocio" name="negocio" type="text" maxlength="80" autocomplete="organization" required>
+      </div>
+
+      <div class="campo">
+        <label for="rubro">¿A qué te dedicás? <span class="req">*</span></label>
+        <select id="rubro" name="rubro" required>
+          <option value="">Elegí tu rubro…</option>
+        </select>
+        <p class="pista">Según lo que elijas, el asistente ya sabe cómo se atiende en ese rubro.</p>
+      </div>
+
+      <div id="porRubro"></div>
+
+      <div class="campo">
+        <label for="telefono">Tu WhatsApp <span class="req">*</span></label>
+        <input id="telefono" name="telefono" type="tel" inputmode="numeric" autocomplete="tel" placeholder="1163067486" required>
+        <p class="pista">Es el número desde el que vas a probarlo, para que el asistente te reconozca. Código de área y número, <b>sin 0 y sin 15</b>. Ejemplo: <b>1163067486</b>.</p>
+      </div>
+
+      <div class="campo">
+        <label>¿Cómo querés que hable?</label>
+        <div class="tonos">
+          <label class="tono"><input type="radio" name="tono" value="cercano" checked>
+            <span>Cercano<small>De vos, con buena onda</small></span></label>
+          <label class="tono"><input type="radio" name="tono" value="formal">
+            <span>Formal<small>De usted, sobrio</small></span></label>
+          <label class="tono"><input type="radio" name="tono" value="canchero">
+            <span>Canchero<small>Relajado, con humor</small></span></label>
+        </div>
+      </div>
+
+      <p class="error" id="error" role="alert"></p>
+      <button class="btn" id="enviar" type="submit">Armar mi asistente</button>
+      <p class="legal">Usamos esto sólo para armarte la demo y para escribirte si nos preguntás algo. Se borra sola a los 7 días.</p>
+    </form>
+  </div>
+
+  <div id="paso-listo" class="listo" hidden>
+    <div class="tic">✓</div>
+    <h2 id="listo-titulo">Tu asistente está listo</h2>
+    <p>Abrí WhatsApp y escribile. Te va a contestar como si fuera el de tu negocio.</p>
+    <a class="btn" id="ir-wa" href="#" target="_blank" rel="noopener">Abrir WhatsApp</a>
+    <p class="num" id="num-bot"></p>
+    <div class="tips">
+      <div><i>→</i><span>Preguntale lo que te preguntan tus clientes todos los días.</span></div>
+      <div><i>→</i><span>Probá con algo que no le contaste: tiene que decir que lo consulta, no inventar.</span></div>
+      <div><i>→</i><span>Si algo te contesta mal, mandale la captura a Nico. Eso es lo que más sirve.</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+var RUBROS = {};
+var form = document.getElementById("form");
+var boton = document.getElementById("enviar");
+var error = document.getElementById("error");
+var selRubro = document.getElementById("rubro");
+var cont = document.getElementById("porRubro");
+
+var esc = function(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+  return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[c]; }); };
+
+// Las preguntas las manda el servidor: una sola fuente de verdad, la misma que
+// usa el bot para saber cómo atender.
+(async function cargarRubros(){
+  try {
+    var r = await fetch("/api/rubros");
+    RUBROS = await r.json();
+    Object.keys(RUBROS).forEach(function(k){
+      var o = document.createElement("option");
+      o.value = k; o.textContent = RUBROS[k].t;
+      selRubro.appendChild(o);
+    });
+  } catch (e) {
+    error.textContent = "No pude cargar los rubros. Recargá la página.";
+  }
+})();
+
+selRubro.addEventListener("change", function(){
+  var R = RUBROS[selRubro.value];
+  cont.innerHTML = "";
+  if (!R) return;
+
+  R.campos.forEach(function(c){
+    var div = document.createElement("div");
+    div.className = "campo";
+    div.innerHTML =
+      '<label for="c-' + esc(c.id) + '">' + esc(c.l) + '</label>' +
+      '<textarea id="c-' + esc(c.id) + '" maxlength="1200" placeholder="' + esc(c.ph) + '"></textarea>';
+    cont.appendChild(div);
+  });
+
+  var nota = document.createElement("p");
+  nota.className = "rubro-nota";
+  nota.textContent = "Completá lo que puedas: con una o dos ya contesta. Cuanto más concreto, mejor queda.";
+  cont.appendChild(nota);
+
+  var primero = cont.querySelector("textarea");
+  if (primero) primero.focus();
+});
+
+form.addEventListener("submit", async function(e){
+  e.preventDefault();
+  error.textContent = "";
+
+  var negocio = document.getElementById("negocio").value.trim();
+  var telefono = document.getElementById("telefono").value.trim();
+  var rubro = selRubro.value;
+
+  if (!negocio) { error.textContent = "Falta el nombre de tu negocio."; return; }
+  if (!rubro) { error.textContent = "Elegí tu rubro para que te preguntemos lo que corresponde."; return; }
+  if (!telefono) { error.textContent = "Falta tu WhatsApp. Ejemplo: 1163067486."; return; }
+
+  var respuestas = {};
+  var algo = false;
+  (RUBROS[rubro].campos || []).forEach(function(c){
+    var el = document.getElementById("c-" + c.id);
+    if (el && el.value.trim()) { respuestas[c.id] = el.value.trim(); algo = true; }
+  });
+  if (!algo) { error.textContent = "Contanos aunque sea una cosa de tu negocio, si no el asistente no tiene con qué contestar."; return; }
+
+  boton.disabled = true;
+  boton.textContent = "Armándolo…";
+
+  try {
+    var r = await fetch("/api/demo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        negocio: negocio,
+        rubro: rubro,
+        respuestas: respuestas,
+        telefono: telefono,
+        tono: (document.querySelector('input[name="tono"]:checked') || {}).value || "cercano"
+      })
+    });
+    var j = await r.json();
+    if (!r.ok) throw new Error(j.error || "No pude armarlo. Probá de nuevo en un minuto.");
+
+    document.getElementById("paso-form").hidden = true;
+    document.getElementById("paso-listo").hidden = false;
+    document.getElementById("listo-titulo").textContent = "El asistente de " + j.negocio + " está listo";
+    document.getElementById("ir-wa").href = j.wa;
+    var num = (j.wa.match(/wa\.me\/(\d+)/) || [])[1];
+    if (num) document.getElementById("num-bot").textContent = "O guardá el número: +" + num;
+    window.scrollTo(0, 0);
+  } catch (err) {
+    error.textContent = err.message;
+    boton.disabled = false;
+    boton.textContent = "Armar mi asistente";
+  }
+});
+</script>
+</body>
+</html>
