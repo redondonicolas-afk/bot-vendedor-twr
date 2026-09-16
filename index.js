@@ -8,7 +8,11 @@
  * Cuando junta los 5 datos, Claude emite una línea oculta ##LEAD## {json} que:
  *   - NO se le manda al cliente (se borra antes de responder)
  *   - se guarda en el Google Sheet (via LEAD_WEBHOOK_URL, un Google Apps Script)
- *   - te avisa por Telegram (opcional)
+ *   - te avisa por Telegram
+ *
+ * Y si la persona ARRANCA PERO NO TERMINA, después de unos minutos de silencio
+ * también te avisa por Telegram. Eso es lo que antes se perdía: el que abandonaba
+ * quedaba enterrado en la pestaña "Conversaciones" y nadie se enteraba.
  *
  * Deploy: Railway. Ver README_DEPLOY.md
  */
@@ -18,10 +22,20 @@ const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
 
+// Demo autogenerada: el que llenó el formulario de /probar habla con SU bot.
+const { montarDemo, promptDeDemo, tocarDemo } = require('./demo');
+
 const app = express();
 app.use(express.json());
+montarDemo(app);
 
 const CONFIG = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
+
+// Minutos de silencio antes de considerar que la persona abandonó.
+const ABANDONO_MINUTOS = Number((process.env.ABANDONO_MINUTOS || '').trim()) || 15;
+// Con menos mensajes que esto no avisa: el que manda solo el saludo precargado
+// y se va no deja nada con qué trabajar, y avisar de eso es ruido.
+const ABANDONO_MIN_MENSAJES = Number((process.env.ABANDONO_MIN_MENSAJES || '').trim()) || 2;
 
 // ============================================
 // SYSTEM PROMPT DEL BOT VENDEDOR
@@ -85,6 +99,8 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const conversaciones = {};
 
 async function consultarClaude(telefono, mensaje) {
+    tocarDemo(telefono);
+
     if (!conversaciones[telefono]) conversaciones[telefono] = [];
     const n = CONFIG.historialMensajes || 12;
     const historial = conversaciones[telefono].slice(-n);
@@ -92,9 +108,10 @@ async function consultarClaude(telefono, mensaje) {
 
     try {
         const response = await anthropic.messages.create({
-            model: CONFIG.modeloClaude || 'claude-sonnet-4-20250514',
+            model: CONFIG.modeloClaude || 'claude-sonnet-5',
             max_tokens: CONFIG.maxTokens || 1024,
-            system: SYSTEM_PROMPT,
+            // Si esta persona llenó el formulario, el bot es EL SUYO, no el vendedor.
+            system: promptDeDemo(telefono) || SYSTEM_PROMPT,
             messages: mensajes
         });
         const respuesta = (response.content.find(b => b.type === 'text')?.text) || CONFIG.mensajeError;
@@ -153,8 +170,8 @@ function registrarConversacion(telefono, entrante, saliente) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(fila)
     }).then(res => {
-        if (!res.ok) console.error(`\u26a0\ufe0f El Sheet rechazó el registro de conversación: ${res.status}`);
-    }).catch(e => console.error('\u26a0\ufe0f No pude registrar la conversación:', e.message));
+        if (!res.ok) console.error(`⚠️ El Sheet rechazó el registro de conversación: ${res.status}`);
+    }).catch(e => console.error('⚠️ No pude registrar la conversación:', e.message));
 }
 
 // fetch NO tira excepción cuando el servidor responde 400 o 404: solo si no hay red.
@@ -179,45 +196,126 @@ async function postearJson(url, cuerpo, etiqueta) {
     }
 }
 
+// ============================================
+// TELEGRAM
+// ============================================
+
+// .trim() a propósito: un espacio pegado de más en la variable de entorno rompía
+// el envío en silencio y el log decía que había salido bien.
+async function avisarTelegram(mensaje, etiqueta) {
+    const tgToken = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+    const tgChat = (process.env.TELEGRAM_CHAT_ID || '').trim();
+
+    if (!tgToken || !tgChat) {
+        console.warn('⚠️ Telegram sin configurar: falta TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID');
+        return false;
+    }
+
+    const url = `https://api.telegram.org/bot${tgToken}/sendMessage`;
+    const ok = await postearJson(url, { chat_id: tgChat, text: mensaje, parse_mode: 'Markdown' }, etiqueta);
+
+    // Si Markdown no parsea (un * o un _ suelto en lo que escribió el cliente),
+    // reintentar en texto plano antes que perder el aviso.
+    if (!ok) {
+        return await postearJson(
+            url,
+            { chat_id: tgChat, text: mensaje.replace(/[*_`]/g, '') },
+            `${etiqueta} (texto plano)`
+        );
+    }
+    return true;
+}
+
+// ============================================
+// AVISO DE ABANDONO
+// ============================================
+//
+// El que completa las 5 preguntas dispara el lead y el aviso. El que arranca y se
+// va a la mitad quedaba solo en la pestaña "Conversaciones", que nadie abre.
+// Acá se le pone un temporizador: si pasa ABANDONO_MINUTOS sin escribir y nunca
+// llegó a ser lead, avisa igual con lo que la persona alcanzó a contar.
+//
+// ⚠️ Los temporizadores viven en memoria: un deploy de Railway los borra. Si alguien
+// quedó a mitad justo cuando deployás, ese aviso se pierde (la conversación no: esa
+// está en el Sheet). Se arregla de verdad cuando migremos a Redis.
+
+const seguimiento = {};
+
+function cancelarSeguimiento(telefono) {
+    const s = seguimiento[telefono];
+    if (s && s.timer) clearTimeout(s.timer);
+    delete seguimiento[telefono];
+}
+
+function programarAvisoAbandono(telefono) {
+    const previo = seguimiento[telefono] || { mensajes: 0, avisado: false };
+    if (previo.timer) clearTimeout(previo.timer);
+
+    const s = {
+        mensajes: previo.mensajes + 1,
+        avisado: previo.avisado,
+        timer: null
+    };
+
+    s.timer = setTimeout(() => { dispararAvisoAbandono(telefono); }, ABANDONO_MINUTOS * 60 * 1000);
+    // No queremos que un temporizador pendiente impida que el proceso termine.
+    if (typeof s.timer.unref === 'function') s.timer.unref();
+
+    seguimiento[telefono] = s;
+}
+
+async function dispararAvisoAbandono(telefono) {
+    const s = seguimiento[telefono];
+    if (!s || s.avisado) return;
+    if (s.mensajes < ABANDONO_MIN_MENSAJES) { cancelarSeguimiento(telefono); return; }
+
+    // Lo que escribió la persona, que es lo único que sirve para retomar.
+    const dichos = (conversaciones[telefono] || [])
+        .filter(m => m.role === 'user')
+        .map(m => String(m.content).replace(/\n+/g, ' ').trim())
+        .filter(Boolean);
+
+    // La última cosa que preguntó el bot: dice en qué punto se cortó.
+    const ultimaDelBot = (conversaciones[telefono] || [])
+        .filter(m => m.role === 'assistant')
+        .map(m => String(m.content).replace(/\n+/g, ' ').trim())
+        .pop() || '';
+
+    const texto =
+        `🚪 *Se fue a la mitad*\n\n` +
+        `📱 ${telefono}\n` +
+        `💬 ${s.mensajes} mensajes · ${ABANDONO_MINUTOS} min sin responder\n\n` +
+        `*Lo que contó:*\n` +
+        dichos.map(t => `• ${t.slice(0, 140)}`).join('\n') +
+        `\n\n*Se cortó acá:*\n${ultimaDelBot.slice(0, 220)}` +
+        `\n\nNo llegó a ser lead. Si le vas a escribir, hacelo hoy.`;
+
+    s.avisado = true;
+    console.log(`🚪 Abandono detectado: ${telefono} (${s.mensajes} mensajes)`);
+    await avisarTelegram(texto, 'Aviso de abandono');
+    cancelarSeguimiento(telefono);
+}
+
+// ============================================
+// GUARDAR LEAD
+// ============================================
+
 async function guardarLead(lead) {
     if (!lead) return;
     console.log('📥 LEAD nuevo:', JSON.stringify(lead));
 
     // 1) Telegram PRIMERO: es el aviso que Nico necesita al instante.
     //    Guardar en el Sheet puede tardar decenas de segundos y no puede demorar esto.
-    //    .trim() a propósito: un espacio pegado de más en la variable de entorno rompía
-    //    el envío en silencio.
-    const tgToken = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
-    const tgChat = (process.env.TELEGRAM_CHAT_ID || '').trim();
+    const msg =
+        `🎯 *Nuevo lead del QR*\n\n` +
+        `🏪 ${lead.negocio || '-'} (${lead.rubro || '-'})\n` +
+        `📱 ${lead.telefono || '-'}\n` +
+        `📩 Contacto: ${lead.contacto || '-'}\n` +
+        `❓ Preguntan: ${lead.que_preguntan || '-'}\n` +
+        `🎁 Quiere: ${lead.que_resuelva || '-'}\n` +
+        `📌 Etapa: ${lead.etapa || '-'}`;
 
-    if (tgToken && tgChat) {
-        const msg =
-            `🎯 *Nuevo lead del QR*\n\n` +
-            `🏪 ${lead.negocio || '-'} (${lead.rubro || '-'})\n` +
-            `📱 ${lead.telefono || '-'}\n` +
-            `📩 Contacto: ${lead.contacto || '-'}\n` +
-            `❓ Preguntan: ${lead.que_preguntan || '-'}\n` +
-            `🎁 Quiere: ${lead.que_resuelva || '-'}\n` +
-            `📌 Etapa: ${lead.etapa || '-'}`;
-
-        const ok = await postearJson(
-            `https://api.telegram.org/bot${tgToken}/sendMessage`,
-            { chat_id: tgChat, text: msg, parse_mode: 'Markdown' },
-            'Aviso por Telegram'
-        );
-
-        // Si Markdown no parsea (un * o un _ suelto en lo que escribió el cliente),
-        // reintentar en texto plano antes que perder el aviso.
-        if (!ok) {
-            await postearJson(
-                `https://api.telegram.org/bot${tgToken}/sendMessage`,
-                { chat_id: tgChat, text: msg.replace(/\*/g, '') },
-                'Aviso por Telegram (texto plano)'
-            );
-        }
-    } else {
-        console.warn('⚠️ Telegram sin configurar: no hay TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID');
-    }
+    await avisarTelegram(msg, 'Aviso por Telegram');
 
     // 2) Google Sheet
     if (process.env.LEAD_WEBHOOK_URL) {
@@ -261,7 +359,15 @@ app.post('/webhook', async (req, res) => {
                                 const salida = textoLimpio || respuestaCruda;
                                 await enviarMensaje(from, salida);
                                 registrarConversacion(from, texto, salida);
-                                if (lead) await guardarLead(lead);
+
+                                if (lead) {
+                                    // Llegó al final: ya no es un abandono.
+                                    cancelarSeguimiento(from);
+                                    await guardarLead(lead);
+                                } else {
+                                    // Sigue a mitad de camino: reiniciar el reloj.
+                                    programarAvisoAbandono(from);
+                                }
                             }
                         }
                     }
@@ -309,7 +415,13 @@ async function enviarMensaje(to, mensaje) {
 // HEALTH
 // ============================================
 
-app.get('/', (req, res) => res.json({ status: 'ok', bot: 'vendedor', negocio: CONFIG.nombreNegocio }));
+app.get('/', (req, res) => res.json({
+    status: 'ok',
+    bot: 'vendedor',
+    negocio: CONFIG.nombreNegocio,
+    avisoAbandono: `${ABANDONO_MINUTOS} min / mín ${ABANDONO_MIN_MENSAJES} mensajes`,
+    enSeguimiento: Object.keys(seguimiento).length
+}));
 app.get('/health', (req, res) => res.json({ status: 'healthy' }));
 
 const PORT = process.env.PORT || 3000;
